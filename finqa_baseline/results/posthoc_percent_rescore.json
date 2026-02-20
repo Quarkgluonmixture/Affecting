@@ -1,0 +1,51 @@
+{
+  "policy": "For percent questions, if |gold|<1 and |pred|>1, also test pred/100 under same tolerance.",
+  "atol": 0.001,
+  "rtol": 0.001,
+  "records": [
+    {
+      "model": "Qwen/Qwen3-8B",
+      "setting": "oracle",
+      "split": "test",
+      "num_samples": 1147,
+      "base_accuracy": 0.07672188317349608,
+      "adjusted_accuracy": 0.10810810810810811,
+      "accuracy_delta": 0.03138622493461203,
+      "parse_fail_rate": 0.007846556233653008,
+      "percent_recovered_count": 36
+    },
+    {
+      "model": "Qwen/Qwen3-8B",
+      "setting": "full",
+      "split": "test",
+      "num_samples": 1147,
+      "base_accuracy": 0.044463818657367045,
+      "adjusted_accuracy": 0.05928509154315606,
+      "accuracy_delta": 0.014821272885789015,
+      "parse_fail_rate": 0.0026155187445510027,
+      "percent_recovered_count": 17
+    },
+    {
+      "model": "Qwen/Qwen3-4B",
+      "setting": "oracle",
+      "split": "test",
+      "num_samples": 1147,
+      "base_accuracy": 0.16564952048823017,
+      "adjusted_accuracy": 0.25806451612903225,
+      "accuracy_delta": 0.09241499564080209,
+      "parse_fail_rate": 0.006102877070619006,
+      "percent_recovered_count": 106
+    },
+    {
+      "model": "Qwen/Qwen3-4B",
+      "setting": "full",
+      "split": "test",
+      "num_samples": 1147,
+      "base_accuracy": 0.13600697471665213,
+      "adjusted_accuracy": 0.1961639058413252,
+      "accuracy_delta": 0.06015693112467306,
+      "parse_fail_rate": 0.0026155187445510027,
+      "percent_recovered_count": 69
+    }
+  ]
+}

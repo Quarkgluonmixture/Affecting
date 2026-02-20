@@ -1,0 +1,121 @@
+{
+  "runs": [
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-8B",
+      "split": "test",
+      "setting": "oracle",
+      "num_samples": 1,
+      "max_new_tokens": 16,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.0,
+      "parse_fail_rate": 1.0,
+      "jsonl": "results/finqa_Qwen_Qwen3-8B_oracle_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-8B",
+      "split": "test",
+      "setting": "oracle",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.006102877070619006,
+      "parse_fail_rate": 0.22319093286835223,
+      "jsonl": "results/finqa_Qwen_Qwen3-8B_oracle_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-8B",
+      "split": "test",
+      "setting": "full",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.0017436791630340018,
+      "parse_fail_rate": 0.24847428073234526,
+      "jsonl": "results/finqa_Qwen_Qwen3-8B_full_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-4B",
+      "split": "test",
+      "setting": "oracle",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.0008718395815170009,
+      "parse_fail_rate": 0.25719267654751526,
+      "jsonl": "results/finqa_Qwen_Qwen3-4B_oracle_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-4B",
+      "split": "test",
+      "setting": "full",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.0008718395815170009,
+      "parse_fail_rate": 0.26068003487358327,
+      "jsonl": "results/finqa_Qwen_Qwen3-4B_full_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-8B",
+      "split": "test",
+      "setting": "oracle",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.07672188317349608,
+      "parse_fail_rate": 0.007846556233653008,
+      "jsonl": "results/finqa_Qwen_Qwen3-8B_oracle_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-8B",
+      "split": "test",
+      "setting": "full",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.044463818657367045,
+      "parse_fail_rate": 0.0026155187445510027,
+      "jsonl": "results/finqa_Qwen_Qwen3-8B_full_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-4B",
+      "split": "test",
+      "setting": "oracle",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.16564952048823017,
+      "parse_fail_rate": 0.006102877070619006,
+      "jsonl": "results/finqa_Qwen_Qwen3-4B_oracle_test.jsonl"
+    },
+    {
+      "task": "finqa",
+      "model": "Qwen/Qwen3-4B",
+      "split": "test",
+      "setting": "full",
+      "num_samples": 1147,
+      "max_new_tokens": 32,
+      "atol": 0.001,
+      "rtol": 0.001,
+      "accuracy": 0.13600697471665213,
+      "parse_fail_rate": 0.0026155187445510027,
+      "jsonl": "results/finqa_Qwen_Qwen3-4B_full_test.jsonl"
+    }
+  ]
+}
