@@ -22,6 +22,7 @@ python -m pip install \
   bitsandbytes \
   pandas \
   tqdm \
-  regex
+  regex \
+  huggingface_hub
 
 echo "[setup] done. activate via: source $VENV_DIR/bin/activate"
