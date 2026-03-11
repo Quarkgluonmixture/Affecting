@@ -14,6 +14,9 @@ from utils import (
     build_finqa_prompt,
     build_system_instruction,
     ensure_dir,
+    ensure_mathverify_installed,
+    evaluate_mathverify,
+    extract_final_answer_text,
     extract_numeric_prediction,
     is_correct_numeric,
     normalize_gold_numeric,
@@ -30,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--split", type=str, default="test")
     p.add_argument("--setting", type=str, choices=["oracle", "full"], default="oracle")
     p.add_argument("--num_samples", type=int, default=-1)
-    p.add_argument("--max_new_tokens", type=int, default=32)
+    p.add_argument("--max_new_tokens", type=int, default=256)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--atol", type=float, default=1e-3)
     p.add_argument("--rtol", type=float, default=1e-3)
@@ -43,14 +46,35 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument(
         "--enable_thinking",
-        action="store_true",
-        help="Enable model internal thinking in chat template (default: disabled).",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable model internal thinking in chat template (default: enabled).",
+    )
+    p.add_argument(
+        "--evaluator",
+        type=str,
+        choices=["math_verify", "numeric_legacy"],
+        default="math_verify",
+        help="Primary evaluator for reported accuracy/parse fail rate.",
+    )
+    p.add_argument(
+        "--answer_format",
+        type=str,
+        choices=["final_answer_tag", "plain_numeric"],
+        default="final_answer_tag",
+        help="Model output format policy.",
+    )
+    p.add_argument(
+        "--final_answer_tag",
+        type=str,
+        default="FINAL_ANSWER",
+        help="Tag used when answer_format=final_answer_tag.",
     )
     p.add_argument(
         "--percent_auto_scale",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="When question is percentage-like and gold<1<pred, also evaluate pred/100.",
+        help="When question is percentage-like and gold<1<pred, also evaluate pred/100 for legacy evaluator.",
     )
     return p.parse_args()
 
@@ -170,7 +194,18 @@ def _prepare_model_inputs(tokenizer, model, messages: List[Dict[str, str]], enab
                 **template_kwargs,
             )
         except TypeError:
-            model_inputs = tokenizer.apply_chat_template(messages, **template_kwargs)
+            try:
+                model_inputs = tokenizer.apply_chat_template(messages, **template_kwargs)
+            except ValueError as e:
+                if "chat_template is not set" not in str(e):
+                    raise
+                text = messages[0]["content"] + "\n\n" + messages[1]["content"]
+                model_inputs = tokenizer(text, return_tensors="pt")
+        except ValueError as e:
+            if "chat_template is not set" not in str(e):
+                raise
+            text = messages[0]["content"] + "\n\n" + messages[1]["content"]
+            model_inputs = tokenizer(text, return_tensors="pt")
     else:
         text = messages[0]["content"] + "\n\n" + messages[1]["content"]
         model_inputs = tokenizer(text, return_tensors="pt")
@@ -263,9 +298,33 @@ def update_summary(summary_path: str, run_record: Dict[str, Any]) -> None:
     save_json(summary_path, summary)
 
 
+def _resolve_gold_text(example: dict, gold_numeric: Optional[float]) -> str:
+    for key in ["answer", "ans", "gold", "label", "target", "exe_ans"]:
+        if key in example:
+            val = example.get(key)
+            s = str(val).strip() if val is not None else ""
+            if s:
+                return s
+
+    qa = example.get("qa")
+    if isinstance(qa, dict):
+        for key in ["answer", "exe_ans", "ans"]:
+            val = qa.get(key)
+            s = str(val).strip() if val is not None else ""
+            if s:
+                return s
+
+    if gold_numeric is not None:
+        return str(gold_numeric)
+
+    return ""
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
+
+    ensure_mathverify_installed()
 
     ensure_dir(args.results_dir)
     ensure_dir(args.cache_dir)
@@ -280,19 +339,37 @@ def main() -> None:
         ds = ds.select(range(min(args.num_samples, len(ds))))
 
     tokenizer, model = init_model(args.model_name, cache_dir=args.cache_dir, trust_remote_code=args.trust_remote_code)
-    system_prompt = build_system_instruction()
+    system_prompt = build_system_instruction(
+        answer_format=args.answer_format,
+        final_answer_tag=args.final_answer_tag,
+    )
 
     rows: List[Dict[str, Any]] = []
     n_total = 0
-    n_parse_fail = 0
-    n_correct_base = 0
-    n_correct_adjusted = 0
+
+    n_correct_main = 0
+    n_parse_fail_main = 0
+
+    n_correct_mathverify = 0
+    n_parse_fail_mathverify = 0
+
+    n_correct_legacy = 0
+    n_correct_legacy_base = 0
+    n_parse_fail_legacy = 0
     n_percent_recovered = 0
+
+    tag_status_counts: Dict[str, int] = {"closed": 0, "open_only": 0, "absent": 0}
 
     for ex in tqdm(ds, total=len(ds), desc="Evaluating FinQA"):
         question = str(ex.get("question", ""))
         gold = normalize_gold_numeric(ex)
-        prompt = build_finqa_prompt(ex, setting=args.setting)
+        gold_text = _resolve_gold_text(ex, gold)
+        prompt = build_finqa_prompt(
+            ex,
+            setting=args.setting,
+            answer_format=args.answer_format,
+            final_answer_tag=args.final_answer_tag,
+        )
         messages = format_messages(system_prompt, prompt)
 
         raw_output = generate_one(
@@ -302,49 +379,99 @@ def main() -> None:
             max_new_tokens=args.max_new_tokens,
             enable_thinking=args.enable_thinking,
         )
-        pred = extract_numeric_prediction(raw_output)
 
-        parse_fail = pred is None
-        eval_flags = _evaluate_with_optional_percent_autoscale(
-            pred=pred,
+        extraction = extract_final_answer_text(
+            raw_output=raw_output,
+            answer_format=args.answer_format,
+            final_answer_tag=args.final_answer_tag,
+        )
+        final_answer_text = extraction["final_answer_text"]
+        tag_status = extraction["tag_status"]
+        if tag_status not in tag_status_counts:
+            tag_status_counts[tag_status] = 0
+        tag_status_counts[tag_status] += 1
+
+        # Legacy numeric comparator on extracted final answer text.
+        legacy_pred = extract_numeric_prediction(final_answer_text)
+        parse_fail_legacy = legacy_pred is None
+        legacy_eval = _evaluate_with_optional_percent_autoscale(
+            pred=legacy_pred,
             gold=gold,
             question=question,
             atol=args.atol,
             rtol=args.rtol,
             percent_auto_scale=args.percent_auto_scale,
         )
-        base_correct = bool(eval_flags["base_correct"])
-        adjusted_correct = bool(eval_flags["adjusted_correct"])
-        percent_recovered = bool(eval_flags["percent_recovered"])
-        adjusted_pred = eval_flags["adjusted_pred"]
+        correct_legacy_base = bool(legacy_eval["base_correct"])
+        correct_legacy = bool(legacy_eval["adjusted_correct"])
+        percent_recovered = bool(legacy_eval["percent_recovered"])
+        adjusted_legacy_pred = legacy_eval["adjusted_pred"]
 
-        if parse_fail:
-            n_parse_fail += 1
-        if base_correct:
-            n_correct_base += 1
-        if adjusted_correct:
-            n_correct_adjusted += 1
+        if parse_fail_legacy:
+            n_parse_fail_legacy += 1
+        if correct_legacy_base:
+            n_correct_legacy_base += 1
+        if correct_legacy:
+            n_correct_legacy += 1
         if percent_recovered:
             n_percent_recovered += 1
+
+        mv_eval = evaluate_mathverify(gold_text=gold_text, pred_text=final_answer_text)
+        correct_mathverify = bool(mv_eval["correct"])
+        parse_fail_mathverify = bool(mv_eval["parse_fail"])
+        mathverify_error = str(mv_eval.get("error", ""))
+
+        if parse_fail_mathverify:
+            n_parse_fail_mathverify += 1
+        if correct_mathverify:
+            n_correct_mathverify += 1
+
+        if args.evaluator == "math_verify":
+            correct_main = correct_mathverify
+            parse_fail_main = parse_fail_mathverify
+        else:
+            correct_main = correct_legacy
+            parse_fail_main = parse_fail_legacy
+
+        if parse_fail_main:
+            n_parse_fail_main += 1
+        if correct_main:
+            n_correct_main += 1
 
         rows.append(
             {
                 "question": question,
                 "gold": gold,
-                "pred": pred,
-                "adjusted_pred": adjusted_pred,
+                "gold_text": gold_text,
                 "raw_output": raw_output,
-                "correct_base": base_correct,
-                "correct": adjusted_correct,
+                "final_answer_text": final_answer_text,
+                "tag_status": tag_status,
+                "pred": adjusted_legacy_pred,
+                "pred_legacy_raw": legacy_pred,
+                "pred_legacy_adjusted": adjusted_legacy_pred,
+                "correct": correct_main,
+                "correct_mathverify": correct_mathverify,
+                "correct_legacy": correct_legacy,
+                "correct_legacy_base": correct_legacy_base,
+                "parse_fail": parse_fail_main,
+                "parse_fail_mathverify": parse_fail_mathverify,
+                "parse_fail_legacy": parse_fail_legacy,
                 "percent_recovered": percent_recovered,
-                "parse_fail": parse_fail,
+                "mathverify_error": mathverify_error,
+                "evaluator": args.evaluator,
             }
         )
         n_total += 1
 
-    accuracy_base = (n_correct_base / n_total) if n_total else 0.0
-    accuracy_adjusted = (n_correct_adjusted / n_total) if n_total else 0.0
-    parse_fail_rate = (n_parse_fail / n_total) if n_total else 0.0
+    accuracy_main = (n_correct_main / n_total) if n_total else 0.0
+    parse_fail_rate_main = (n_parse_fail_main / n_total) if n_total else 0.0
+
+    accuracy_mathverify = (n_correct_mathverify / n_total) if n_total else 0.0
+    parse_fail_rate_mathverify = (n_parse_fail_mathverify / n_total) if n_total else 0.0
+
+    accuracy_legacy = (n_correct_legacy / n_total) if n_total else 0.0
+    accuracy_legacy_base = (n_correct_legacy_base / n_total) if n_total else 0.0
+    parse_fail_rate_legacy = (n_parse_fail_legacy / n_total) if n_total else 0.0
 
     safe_model = sanitize_model_name(args.model_name)
     jsonl_path = os.path.join(args.results_dir, f"finqa_{safe_model}_{args.setting}_{args.split}.jsonl")
@@ -363,12 +490,24 @@ def main() -> None:
         "max_new_tokens": args.max_new_tokens,
         "atol": args.atol,
         "rtol": args.rtol,
+        "enable_thinking": args.enable_thinking,
+        "evaluator": args.evaluator,
+        "answer_format": args.answer_format,
+        "final_answer_tag": args.final_answer_tag,
         "percent_auto_scale": args.percent_auto_scale,
-        "accuracy": accuracy_adjusted,
-        "accuracy_base": accuracy_base,
-        "accuracy_adjusted": accuracy_adjusted,
+        "accuracy": accuracy_main,
+        "parse_fail_rate": parse_fail_rate_main,
+        "accuracy_mathverify": accuracy_mathverify,
+        "accuracy_legacy": accuracy_legacy,
+        "accuracy_legacy_base": accuracy_legacy_base,
+        "accuracy_base": accuracy_legacy_base,
+        "accuracy_adjusted": accuracy_legacy,
+        "parse_fail_rate_mathverify": parse_fail_rate_mathverify,
+        "parse_fail_rate_legacy": parse_fail_rate_legacy,
+        "parse_fail_mathverify": n_parse_fail_mathverify,
+        "parse_fail_legacy": n_parse_fail_legacy,
         "percent_recovered_count": n_percent_recovered,
-        "parse_fail_rate": parse_fail_rate,
+        "tag_status_counts": tag_status_counts,
         "jsonl": jsonl_path,
     }
 

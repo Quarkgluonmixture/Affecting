@@ -23,6 +23,7 @@ python -m pip install \
   pandas \
   tqdm \
   regex \
-  huggingface_hub
+  huggingface_hub \
+  "math-verify==0.9.0"
 
 echo "[setup] done. activate via: source $VENV_DIR/bin/activate"

@@ -148,7 +148,18 @@ def _prepare_model_inputs(tokenizer, model, messages: List[Dict[str, str]], enab
                 **template_kwargs,
             )
         except TypeError:
-            model_inputs = tokenizer.apply_chat_template(messages, **template_kwargs)
+            try:
+                model_inputs = tokenizer.apply_chat_template(messages, **template_kwargs)
+            except ValueError as e:
+                if "chat_template is not set" not in str(e):
+                    raise
+                text = messages[0]["content"] + "\n\n" + messages[1]["content"]
+                model_inputs = tokenizer(text, return_tensors="pt")
+        except ValueError as e:
+            if "chat_template is not set" not in str(e):
+                raise
+            text = messages[0]["content"] + "\n\n" + messages[1]["content"]
+            model_inputs = tokenizer(text, return_tensors="pt")
     else:
         text = messages[0]["content"] + "\n\n" + messages[1]["content"]
         model_inputs = tokenizer(text, return_tensors="pt")

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all four FinQA evaluations and generate final report
+# Run regression checks, all four FinQA evaluations, and generate final report.
 
 set -e  # Exit on error
 
@@ -11,8 +11,15 @@ RESULTS_DIR="results"
 mkdir -p "$CACHE_DIR"
 
 echo "========================================"
-echo "Starting FinQA Evaluation Pipeline"
+echo "Starting FinQA Evaluation Pipeline (thinking=true + FINAL_ANSWER + math-verify)"
 echo "========================================"
+echo ""
+
+echo "Running regression checks for extraction/evaluator..."
+python regression_final_answer_mathverify.py \
+  --results_dir "$RESULTS_DIR" \
+  --output "$RESULTS_DIR/regression_final_answer_mathverify.md"
+echo "Regression checks - DONE"
 echo ""
 
 # Run 1: Qwen3-8B / oracle
@@ -21,8 +28,7 @@ python eval_finqa.py \
   --model_name Qwen/Qwen3-8B \
   --split test \
   --setting oracle \
-  --cache_dir "$CACHE_DIR" \
-  --max_new_tokens 32
+  --cache_dir "$CACHE_DIR"
 echo "[1/4] Qwen/Qwen3-8B / oracle - DONE"
 echo ""
 
@@ -32,8 +38,7 @@ python eval_finqa.py \
   --model_name Qwen/Qwen3-8B \
   --split test \
   --setting full \
-  --cache_dir "$CACHE_DIR" \
-  --max_new_tokens 32
+  --cache_dir "$CACHE_DIR"
 echo "[2/4] Qwen/Qwen3-8B / full - DONE"
 echo ""
 
@@ -43,8 +48,7 @@ python eval_finqa.py \
   --model_name Qwen/Qwen3-4B \
   --split test \
   --setting oracle \
-  --cache_dir "$CACHE_DIR" \
-  --max_new_tokens 32
+  --cache_dir "$CACHE_DIR"
 echo "[3/4] Qwen/Qwen3-4B / oracle - DONE"
 echo ""
 
@@ -54,8 +58,7 @@ python eval_finqa.py \
   --model_name Qwen/Qwen3-4B \
   --split test \
   --setting full \
-  --cache_dir "$CACHE_DIR" \
-  --max_new_tokens 32
+  --cache_dir "$CACHE_DIR"
 echo "[4/4] Qwen/Qwen3-4B / full - DONE"
 echo ""
 

@@ -2,6 +2,7 @@ from .prompting import build_system_instruction, build_finqa_prompt, build_carbo
 from .numeric import normalize_gold_numeric, extract_numeric_prediction, is_correct_numeric
 from .io import ensure_dir, save_json, save_jsonl, sanitize_model_name, build_error_cases_markdown
 from .common import set_seed
+from .answer_eval import extract_final_answer_text, evaluate_mathverify, ensure_mathverify_installed
 
 __all__ = [
     "build_system_instruction",
@@ -16,4 +17,7 @@ __all__ = [
     "sanitize_model_name",
     "build_error_cases_markdown",
     "set_seed",
+    "extract_final_answer_text",
+    "evaluate_mathverify",
+    "ensure_mathverify_installed",
 ]

@@ -1,7 +1,18 @@
 from typing import Iterable, List, Sequence
 
 
-def build_system_instruction() -> str:
+def build_system_instruction(
+    answer_format: str = "plain_numeric",
+    final_answer_tag: str = "FINAL_ANSWER",
+) -> str:
+    if answer_format == "final_answer_tag":
+        return (
+            "You are a financial QA assistant. "
+            f"Output exactly one final answer wrapped as [{final_answer_tag}]...[/"
+            f"{final_answer_tag}]. "
+            "Inside the tag, include only the final numeric answer (no explanation, no units). "
+            "Do not output anything outside the tag."
+        )
     return (
         "You are a financial QA assistant. "
         "ONLY output the final numeric answer; no explanation; no units."
@@ -93,7 +104,22 @@ def _pick_gold_evidence(example: dict) -> List[str]:
     return [c.strip() for c in candidates if str(c).strip()]
 
 
-def build_finqa_prompt(example: dict, setting: str) -> str:
+def _final_answer_instruction(answer_format: str, final_answer_tag: str) -> str:
+    if answer_format == "final_answer_tag":
+        return (
+            f"Return exactly one final answer as [{final_answer_tag}]<number>[/"
+            f"{final_answer_tag}]. "
+            "No text outside the tag."
+        )
+    return "Return ONLY the final numeric answer; no explanation; no units."
+
+
+def build_finqa_prompt(
+    example: dict,
+    setting: str,
+    answer_format: str = "plain_numeric",
+    final_answer_tag: str = "FINAL_ANSWER",
+) -> str:
     question = str(example.get("question", "")).strip()
     pre_text = _safe_join_lines(example.get("pre_text") or [])
     post_text = _safe_join_lines(example.get("post_text") or [])
@@ -117,16 +143,20 @@ def build_finqa_prompt(example: dict, setting: str) -> str:
     prompt = (
         f"Context:\n{context}\n\n"
         f"Question:\n{question}\n\n"
-        "Return ONLY the final numeric answer; no explanation; no units."
+        f"{_final_answer_instruction(answer_format=answer_format, final_answer_tag=final_answer_tag)}"
     )
     return prompt
 
 
-def build_carbonpdf_prompt(example: dict) -> str:
+def build_carbonpdf_prompt(
+    example: dict,
+    answer_format: str = "plain_numeric",
+    final_answer_tag: str = "FINAL_ANSWER",
+) -> str:
     question = str(example.get("question", "")).strip()
     context = str(example.get("context", "")).strip()
     return (
         f"Context:\n{context}\n\n"
         f"Question:\n{question}\n\n"
-        "Return ONLY the final numeric answer; no explanation; no units."
+        f"{_final_answer_instruction(answer_format=answer_format, final_answer_tag=final_answer_tag)}"
     )

@@ -1,0 +1,51 @@
+{
+  "total": 4,
+  "passed": 4,
+  "failed": [],
+  "rows": [
+    {
+      "name": "multi-number noise, tagged answer wins",
+      "passed": true,
+      "tag_status": "closed",
+      "final_answer_text": "37.1",
+      "mathverify_correct": true,
+      "mathverify_parse_fail": false,
+      "legacy_pred": 37.1,
+      "legacy_correct": true,
+      "error": ""
+    },
+    {
+      "name": "truncated output with open tag only",
+      "passed": true,
+      "tag_status": "open_only",
+      "final_answer_text": "0.42",
+      "mathverify_correct": true,
+      "mathverify_parse_fail": false,
+      "legacy_pred": 0.42,
+      "legacy_correct": true,
+      "error": ""
+    },
+    {
+      "name": "percent vs decimal equivalence",
+      "passed": true,
+      "tag_status": "closed",
+      "final_answer_text": "42%",
+      "mathverify_correct": true,
+      "mathverify_parse_fail": false,
+      "legacy_pred": 0.42,
+      "legacy_correct": true,
+      "error": ""
+    },
+    {
+      "name": "no tag fallback does not crash",
+      "passed": true,
+      "tag_status": "absent",
+      "final_answer_text": "Candidates: 1, 2, and finally 3.5",
+      "mathverify_correct": true,
+      "mathverify_parse_fail": false,
+      "legacy_pred": 3.5,
+      "legacy_correct": true,
+      "error": ""
+    }
+  ]
+}
