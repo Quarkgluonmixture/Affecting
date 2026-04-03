@@ -27,6 +27,22 @@ if [[ -f "${BASELINE_ROOT}/scripts/apply_dgx_spark_quirks.sh" ]]; then
   source "${BASELINE_ROOT}/scripts/apply_dgx_spark_quirks.sh"
 fi
 
+# Unified HF cache / auth settings for all child processes.
+HF_CACHE_ROOT="${HF_CACHE_ROOT:-/home/jiaming/workspace/.cache/huggingface}"
+HF_HOME="${HF_HOME:-${HF_CACHE_ROOT}}"
+HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_CACHE_ROOT}/hub}"
+TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_CACHE_ROOT}/transformers}"
+mkdir -p "${HF_HOME}" "${HUGGINGFACE_HUB_CACHE}" "${TRANSFORMERS_CACHE}"
+export HF_HOME HUGGINGFACE_HUB_CACHE TRANSFORMERS_CACHE
+
+# Token injection order: HF_TOKEN env > HF_TOKEN_FILE path
+HF_TOKEN_FILE="${HF_TOKEN_FILE:-${HOME}/.config/huggingface/token}"
+if [[ -z "${HF_TOKEN:-}" && -f "${HF_TOKEN_FILE}" ]]; then
+  # shellcheck disable=SC2002
+  HF_TOKEN="$(cat "${HF_TOKEN_FILE}" | tr -d '[:space:]')"
+  export HF_TOKEN
+fi
+
 DATA_UNIFIED_DIR="${DATA_UNIFIED_DIR:-${STAGE1_ROOT}/data/unified}"
 DERIVED_DIR="${DERIVED_DIR:-${DATA_UNIFIED_DIR}/derived}"
 SUBSET_DIR="${SUBSET_DIR:-${DERIVED_DIR}/subsets}"
@@ -63,6 +79,67 @@ rm -f "${MANIFEST_PATH}"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+log_hf_env() {
+  if [[ -n "${HF_TOKEN:-}" ]]; then
+    log "HF auth: token present (len=${#HF_TOKEN})"
+  else
+    log "HF auth: no token found (set HF_TOKEN or HF_TOKEN_FILE for faster/safer downloads)"
+  fi
+  log "HF cache: HF_HOME=${HF_HOME}"
+  log "HF cache: HUB=${HUGGINGFACE_HUB_CACHE}"
+  log "HF cache: TRANSFORMERS=${TRANSFORMERS_CACHE}"
+}
+
+ensure_eval_dependencies() {
+  log "Checking eval dependencies in ${EVAL_PYTHON_BIN} ..."
+  local missing
+  missing="$("${EVAL_PYTHON_BIN}" - <<'PY'
+import importlib.util
+required = ["peft", "math_verify", "transformers", "accelerate"]
+missing = [m for m in required if importlib.util.find_spec(m) is None]
+print(" ".join(missing))
+PY
+)"
+  if [[ -n "${missing}" ]]; then
+    log "Installing missing eval deps: ${missing}"
+    "${EVAL_PYTHON_BIN}" -m pip install ${missing}
+  else
+    log "Eval dependencies are ready."
+  fi
+}
+
+prefetch_models() {
+  log "Prefetching model repos into local cache..."
+  local token_arg=()
+  if [[ -n "${HF_TOKEN:-}" ]]; then
+    token_arg=(--token "${HF_TOKEN}")
+  fi
+  "${PYTHON_BIN}" "${STAGE1_ROOT}/scripts/prefetch_hf_models.py" \
+    --models "${MODEL_4B}" "${MODEL_8B}" \
+    --cache_dir "${HF_CACHE_ROOT}" \
+    "${token_arg[@]}"
+}
+
+resolve_local_model_path() {
+  local model="$1"
+  "${PYTHON_BIN}" - "${HF_CACHE_ROOT}" "${model}" <<'PY'
+import sys
+from pathlib import Path
+
+cache_root = Path(sys.argv[1])
+model = sys.argv[2]
+repo = model.replace("/", "--")
+snapshots = cache_root / f"models--{repo}" / "snapshots"
+if snapshots.exists():
+    cands = [p for p in snapshots.iterdir() if p.is_dir()]
+    if cands:
+        cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        print(str(cands[0]))
+        raise SystemExit(0)
+print(model)
+PY
 }
 
 sanitize_model() {
@@ -251,7 +328,7 @@ run_eval() {
       --model_name "${model_name}"
       --setting "${EVAL_SETTING}"
       --split "${EVAL_SPLIT}"
-      --cache_dir "/home/jiaming/workspace/.cache/huggingface"
+      --cache_dir "${HF_CACHE_ROOT}"
       --results_dir "${results_dir}"
       --evaluator "math_verify"
       --answer_format "final_answer_tag"
@@ -384,6 +461,17 @@ run_error_shift_report() {
 }
 
 main() {
+  log_hf_env
+  ensure_eval_dependencies
+
+  log "Stage -1: model prefetch warmup"
+  prefetch_models
+
+  LOCAL_MODEL_4B="$(resolve_local_model_path "${MODEL_4B}")"
+  LOCAL_MODEL_8B="$(resolve_local_model_path "${MODEL_8B}")"
+  log "Using model source 4B: ${LOCAL_MODEL_4B}"
+  log "Using model source 8B: ${LOCAL_MODEL_8B}"
+
   log "Stage 0: data target normalization + subset generation"
   build_targets
   build_subsets
@@ -392,17 +480,19 @@ main() {
   for model_size in 4B 8B; do
     if [[ "${model_size}" == "4B" ]]; then
       model_name="${MODEL_4B}"
+      model_source="${LOCAL_MODEL_4B}"
       use_qlora="${USE_QLORA_4B}"
       model_tag="4b"
     else
       model_name="${MODEL_8B}"
+      model_source="${LOCAL_MODEL_8B}"
       use_qlora="${USE_QLORA_8B}"
       model_tag="8b"
     fi
 
     for style in answer_only formula_rationale; do
       run_name="${model_tag}_debug_${style}"
-      cfg_path="$(write_config "${run_name}" "${model_name}" "${style}" "${DEBUG_NORM}" "debug" "${use_qlora}")"
+      cfg_path="$(write_config "${run_name}" "${model_source}" "${style}" "${DEBUG_NORM}" "debug" "${use_qlora}")"
       train_and_eval "${run_name}" "debug" "${model_name}" "${model_size}" "${style}" "debug" "${cfg_path}"
     done
   done
@@ -411,17 +501,19 @@ main() {
   for model_size in 4B 8B; do
     if [[ "${model_size}" == "4B" ]]; then
       model_name="${MODEL_4B}"
+      model_source="${LOCAL_MODEL_4B}"
       use_qlora="${USE_QLORA_4B}"
       model_tag="4b"
     else
       model_name="${MODEL_8B}"
+      model_source="${LOCAL_MODEL_8B}"
       use_qlora="${USE_QLORA_8B}"
       model_tag="8b"
     fi
 
     for style in answer_only formula_rationale; do
       run_name="${model_tag}_full_${style}"
-      cfg_path="$(write_config "${run_name}" "${model_name}" "${style}" "${TRAIN_NORM}" "full" "${use_qlora}")"
+      cfg_path="$(write_config "${run_name}" "${model_source}" "${style}" "${TRAIN_NORM}" "full" "${use_qlora}")"
       train_and_eval "${run_name}" "full" "${model_name}" "${model_size}" "${style}" "full" "${cfg_path}"
     done
   done
@@ -437,7 +529,7 @@ main() {
   log "Stage 4: 8B Stage-B ablation (250/1000 + reuse full)"
   for sz in 250 1000; do
     run_name="8b_${sz}_${winner_style}"
-    cfg_path="$(write_config "${run_name}" "${MODEL_8B}" "${winner_style}" "${SUBSET_DIR}/train_${sz}.jsonl" "full" "${USE_QLORA_8B}")"
+    cfg_path="$(write_config "${run_name}" "${LOCAL_MODEL_8B}" "${winner_style}" "${SUBSET_DIR}/train_${sz}.jsonl" "full" "${USE_QLORA_8B}")"
     train_and_eval "${run_name}" "ablation" "${MODEL_8B}" "8B" "${winner_style}" "${sz}" "${cfg_path}"
   done
 
@@ -445,7 +537,7 @@ main() {
     log "Optional: running 4B 250/1000 matched ablation for winner style"
     for sz in 250 1000; do
       run_name="4b_${sz}_${winner_style}"
-      cfg_path="$(write_config "${run_name}" "${MODEL_4B}" "${winner_style}" "${SUBSET_DIR}/train_${sz}.jsonl" "full" "${USE_QLORA_4B}")"
+      cfg_path="$(write_config "${run_name}" "${LOCAL_MODEL_4B}" "${winner_style}" "${SUBSET_DIR}/train_${sz}.jsonl" "full" "${USE_QLORA_4B}")"
       train_and_eval "${run_name}" "ablation" "${MODEL_4B}" "4B" "${winner_style}" "${sz}" "${cfg_path}"
     done
   else
