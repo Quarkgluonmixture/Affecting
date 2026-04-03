@@ -21,6 +21,7 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install \
   "transformers>=4.51.0" \
   accelerate \
+  peft \
   "datasets<4" \
   bitsandbytes \
   pandas \

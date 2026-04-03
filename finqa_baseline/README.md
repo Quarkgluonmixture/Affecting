@@ -71,6 +71,18 @@ Override evaluator/format if needed:
 python eval_finqa.py ... --evaluator numeric_legacy --answer_format plain_numeric
 ```
 
+Evaluate a LoRA adapter on top of a base model:
+
+```bash
+python eval_finqa.py \
+  --model_name Qwen/Qwen3-8B \
+  --adapter_path /path/to/checkpoint-last \
+  --setting oracle \
+  --no-enable_thinking \
+  --answer_format final_answer_tag \
+  --final_answer_tag FINAL_ANSWER
+```
+
 ## Robust verification matrix (thinking true + false)
 
 Runs:

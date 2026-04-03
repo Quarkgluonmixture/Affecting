@@ -25,11 +25,19 @@ def preprocess_data(data, config):
     Returns:
         list of {"text": "full prompt string"} dicts
     """
-    thinking = config.get("preprocessing", {}).get("thinking", True)
+    preprocessing_cfg = config.get("preprocessing", {})
+    thinking = bool(preprocessing_cfg.get("thinking", False))
+    supervision_style = str(preprocessing_cfg.get("supervision_style", "answer_only"))
+    final_answer_tag = str(preprocessing_cfg.get("final_answer_tag", "FINAL_ANSWER"))
 
     processed = []
     for example in data:
-        text = build_prompt(example, thinking=thinking)
+        text = build_prompt(
+            example,
+            thinking=thinking,
+            supervision_style=supervision_style,
+            final_answer_tag=final_answer_tag,
+        )
         processed.append({"text": text})
 
     return processed

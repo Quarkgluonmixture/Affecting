@@ -18,8 +18,9 @@ model:
 
 preprocessing:
   enabled: true
-  thinking: true
-  answer_prefix: "FINAL_ANSWER:"
+  thinking: false
+  supervision_style: answer_only
+  final_answer_tag: "FINAL_ANSWER"
 
 training:
   output_dir: outputs/small_run

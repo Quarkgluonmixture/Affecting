@@ -77,6 +77,15 @@ def _build_cases() -> List[Dict[str, Any]]:
             "expect_mathverify": True,
             "expect_legacy": True,
         },
+        {
+            "name": "formula line + tagged final answer",
+            "raw_output": "Formula: (100690000 - 92710000) / 92710000\n[FINAL_ANSWER]0.0860716201[/FINAL_ANSWER]",
+            "gold_text": "0.0860716201",
+            "gold_numeric": 0.0860716201,
+            "expect_tag_status": "closed",
+            "expect_mathverify": True,
+            "expect_legacy": True,
+        },
     ]
 
 

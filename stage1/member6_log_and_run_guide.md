@@ -86,3 +86,35 @@
 ```bash
 python -m pip install pyyaml
 chmod +x scripts/run_debug.sh scripts/run_train.sh
+```
+
+### 3. 后台运行（含 watchdog + ntfy）
+
+使用统一后台管理脚本：
+
+```bash
+bash scripts/run_train_eval_background.sh start
+```
+
+查看状态：
+
+```bash
+bash scripts/run_train_eval_background.sh status
+```
+
+停止全部后台进程：
+
+```bash
+bash scripts/run_train_eval_background.sh stop
+```
+
+常用环境变量：
+
+- `NTFY_TOPIC`：通知 topic（默认 `finqa-stage1`）
+- `NTFY_SERVER`：通知服务地址（默认 `https://ntfy.sh`）
+- `ENABLE_NTFY`：是否启用通知（`true/false`）
+- `WATCHDOG_TIMEOUT`：watchdog 超时秒数（默认 `1800`）
+- `WATCHDOG_CHECK_INTERVAL`：watchdog 轮询间隔秒（默认 `60`）
+- `NOTIFY_EVERY`：评测进度通知间隔（默认每 100 样本）
+
+日志与 PID 默认在 `stage1/logs/` 下。

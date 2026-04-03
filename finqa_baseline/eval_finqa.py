@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -43,6 +44,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset_config", type=str, default="", help="Optional HF dataset config")
     p.add_argument("--dataset_split", type=str, default="", help="Optional HF split override")
     p.add_argument("--local_json", type=str, default="", help="Optional local json/jsonl file for FinQA")
+    p.add_argument(
+        "--adapter_path",
+        type=str,
+        default="",
+        help="Optional LoRA adapter checkpoint path. Base model is still provided via --model_name.",
+    )
     p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument(
         "--enable_thinking",
@@ -148,9 +155,35 @@ def load_finqa_dataset(args: argparse.Namespace) -> Dataset:
     )
 
 
-def init_model(model_name: str, cache_dir: str, trust_remote_code: bool = False):
+def _pick_tokenizer_source(model_name: str, adapter_path: str) -> str:
+    if not adapter_path:
+        return model_name
+
+    adapter_dir = Path(adapter_path)
+    if not adapter_dir.exists():
+        return model_name
+
+    tokenizer_markers = {
+        "tokenizer_config.json",
+        "tokenizer.json",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+    }
+    if any((adapter_dir / marker).exists() for marker in tokenizer_markers):
+        return str(adapter_dir)
+    return model_name
+
+
+def init_model(
+    model_name: str,
+    cache_dir: str,
+    trust_remote_code: bool = False,
+    adapter_path: str = "",
+):
+    tokenizer_source = _pick_tokenizer_source(model_name=model_name, adapter_path=adapter_path)
     tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
+        tokenizer_source,
         cache_dir=cache_dir,
         trust_remote_code=trust_remote_code,
     )
@@ -158,7 +191,7 @@ def init_model(model_name: str, cache_dir: str, trust_remote_code: bool = False)
         tokenizer.pad_token = tokenizer.eos_token
 
     model_kwargs: Dict[str, Any] = {
-        "dtype": torch.float16,
+        "torch_dtype": torch.float16,
         "device_map": "auto",
         "trust_remote_code": trust_remote_code,
     }
@@ -170,7 +203,12 @@ def init_model(model_name: str, cache_dir: str, trust_remote_code: bool = False)
         model_kwargs.pop("load_in_8bit", None)
         model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=cache_dir, **model_kwargs)
 
-    return tokenizer, model
+    if adapter_path:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, adapter_path)
+
+    return tokenizer, model, tokenizer_source
 
 
 def format_messages(system_prompt: str, user_prompt: str) -> List[Dict[str, str]]:
@@ -387,7 +425,12 @@ def main() -> None:
         _ts = _row.get("tag_status", "absent")
         tag_status_counts[_ts] = tag_status_counts.get(_ts, 0) + 1
 
-    tokenizer, model = init_model(args.model_name, cache_dir=args.cache_dir, trust_remote_code=args.trust_remote_code)
+    tokenizer, model, tokenizer_source = init_model(
+        args.model_name,
+        cache_dir=args.cache_dir,
+        trust_remote_code=args.trust_remote_code,
+        adapter_path=args.adapter_path,
+    )
     system_prompt = build_system_instruction(
         answer_format=args.answer_format,
         final_answer_tag=args.final_answer_tag,
@@ -520,6 +563,8 @@ def main() -> None:
     run_record = {
         "task": "finqa",
         "model": args.model_name,
+        "adapter_path": args.adapter_path,
+        "tokenizer_source": tokenizer_source,
         "split": args.split,
         "setting": args.setting,
         "num_samples": n_total,
